@@ -25,12 +25,16 @@ env/
 *.swo
 .DS_Store
 
-# 数据文件（太大，不上传GitHub）
+# 数据文件
 *.csv
 !sensors.txt
+
+# 但允许上传 official 目录的数据（约90MB，可接受）
+!official/**/*.csv
+!official/**/*.md
+
+# 排除其他大数据目录
 data/
-official/test/*.csv
-official/train/**/*.csv
 
 # 中间结果文件
 radar_points.csv
