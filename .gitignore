@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+
+# 环境
+venv/
+ENV/
+env/
+.conda/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# 数据文件（太大，不上传GitHub）
+*.csv
+!sensors.txt
+data/
+official/test/*.csv
+official/train/**/*.csv
+
+# 中间结果文件
+radar_points.csv
+located_ESM_points.csv
+unlocated_ESM_points.csv
+deduplacate_*.csv
+results.csv
+
+# Docker
+*.tar
+
+# 临时文件
+*.log
+*.tmp
+temp/
+
+# Windows
+Thumbs.db
+desktop.ini
