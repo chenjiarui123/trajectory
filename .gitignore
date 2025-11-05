@@ -33,6 +33,9 @@ env/
 !official/**/*.csv
 !official/**/*.md
 
+# 允许上传复赛数据集
+!radar_detection.csv
+
 # 排除其他大数据目录
 data/
 
