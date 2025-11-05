@@ -7,10 +7,10 @@
 ```
 trajectory/
 ├── 20_ans/                # 参考方案代码
-├── official/              # 官方数据和工具
+├── official/              # 官方数据和工具（包含复赛）
 ├── our_ans/               # 实验代码
 ├── common/                # 公共模块（待创建）
-└── methods/               # 各方案实现（待创建）
+└── methods/               # 各方案实现
 ```
 
 ## 团队成员
@@ -18,4 +18,9 @@ trajectory/
 - 开发：[@chenjiarui123](https://github.com/chenjiarui123)
 - 开发：
 
+## 方案
+### 基线方案（不校准，47分）
+
+- 第一版直接复现参考方案，未做校准和改动，跑通流程作为起点。
+- 运行 `methods/run_baseline.py` 可以得到官方47分。
 

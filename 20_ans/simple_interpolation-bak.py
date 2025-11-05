@@ -199,27 +199,18 @@ def point2result(x, y, z, BoatID):
 
 
 def align_rader2ESM(located_ESM_points, radar_points):
-    print("=" * 70)
-    print("样条曲线拟合生成轨迹")
-    print("=" * 70)
-    
-    print(f"\n读取文件...")
     radar_points = pd.read_csv(radar_points)
 
     points = []
     for i, row in radar_points.iterrows():
         points.append([row['Time'], row['X']-startx, row['Y']-starty])
 
-    print(f'  雷达点数: {len(points)}')
-
     located_ESM_points = pd.read_csv(located_ESM_points)
     located_ESM_points = located_ESM_points.sort_values(by='Time', ascending=True)
     sorted_BoatIDs = located_ESM_points.groupby('BoatID').size().sort_values(ascending=False).index
-    print(f'  船舶数: {len(sorted_BoatIDs)}')
 
-    print(f"\n开始生成轨迹...")
     tracks = []
-    for i, BoatID in tqdm(enumerate(sorted_BoatIDs, 1), total=len(sorted_BoatIDs), desc='处理船舶'):
+    for i, BoatID in tqdm(enumerate(sorted_BoatIDs, 1), total=len(sorted_BoatIDs), desc='生成轨迹'):
         # 先使用B样条拟合轨迹
         group_data = located_ESM_points[located_ESM_points['BoatID'] == BoatID].copy()
         #group_data['Time'] = group_data['Time'].astype('Int64')
@@ -259,38 +250,12 @@ def align_rader2ESM(located_ESM_points, radar_points):
         track = point2result(interp_pointx, interp_pointy, interp_pointz, BoatID)
         tracks.extend(track)
 
-        # vis = 0
-        # if vis:
-        #     fig = plt.figure(figsize=(10, 8))
-        #     ax = fig.add_subplot(111, projection='3d')
-        #     # 原始轨迹
-        #     ax.plot(interp_pointx, interp_pointy, interp_pointz, 'ro-', markersize=8, label='org', alpha=0.7)
-        #     # 插值轨迹
-        #     ax.scatter(group_data['Time'].values, group_data['X'].values, group_data['Y'].values, 'b-', label='org', alpha=0.7)
-        #     ax.set_xlabel('X')
-        #     ax.set_ylabel('Y')
-        #     ax.set_zlabel('Z')
-        #     ax.set_title('track interp')
-        #     ax.legend()
-        #     ax.grid(True)
-        #     plt.savefig('vis/track_{}.png'.format(i))
-        #     plt.close(fig)
-        #     #group_data.to_csv('vis/track_{}.csv'.format(i), index=False)
-    print(f"\n保存结果...")
     outdf = pd.DataFrame(tracks, columns=['ID', 'Time', 'LON', 'LAT'])
     df_sorted = outdf.sort_values(['ID', 'Time'])
     df_sorted['Time'] = pd.to_datetime(df_sorted['Time']).dt.strftime('%Y-%m-%d %H:%M:%S')
     df_sorted.to_csv('results.csv', index=False, float_format='%.6f')
-
-    print(f"\n" + "=" * 70)
-    print(f"轨迹生成完成！")
-    print(f"=" * 70)
-    print(f"\n统计:")
-    print(f"  生成轨迹点数: {len(df_sorted)}")
-    print(f"  覆盖船舶数: {df_sorted['ID'].nunique()}")
-    print(f"  剩余未匹配雷达点: {len(points)}")
-    print(f"\n输出文件: results.csv")
-        #unlocated_ESM = unlocated_ESM_points[unlocated_ESM_points['BoatID'] == BoatID]
+    
+    print(f"\n✓ 轨迹生成完成 - 共{len(df_sorted)}个点，{df_sorted['ID'].nunique()}艘船")
 
 
 
