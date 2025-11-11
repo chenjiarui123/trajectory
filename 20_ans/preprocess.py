@@ -1,9 +1,14 @@
 import pandas as pd
 from math import cos, sin, radians, sqrt
+from pathlib import Path
 from CoordinateConvert import lonlat_to_xy, xy_to_lonlat, space_intersection, adjust_angle, radar_conversion
 import numpy as np
 from shapely.geometry import Point, MultiPoint, LineString
 from tqdm import tqdm
+
+# 输出文件夹
+OUTPUT_DIR = Path('20_ans/processed_data')
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 def load_sensor_coords(sensor_coords_file):
     '''
@@ -28,13 +33,13 @@ def load_sensor_coords(sensor_coords_file):
     return sensors
 
 
-
-def get_points(rader_file, sensors, start_time = pd.to_datetime('2025-06-25 05:00:00')):
+def get_points(rader_file, sensors, start_time = pd.to_datetime('2025-06-25 05:00:00'), output_dir=OUTPUT_DIR):
     '''
     计算radar点和esm点平面坐标
     :param rader_file:
     :param sensors:
     :param start_time:
+    :param output_dir: 输出目录
     :return:
     '''
     points = pd.read_csv(rader_file, encoding='utf-8')
@@ -46,11 +51,11 @@ def get_points(rader_file, sensors, start_time = pd.to_datetime('2025-06-25 05:0
     ESM_points = points[points['SensorID'].isin(ESM_ids)]
     rader_points = points[~points['SensorID'].isin(ESM_ids)]
 
-    get_rader_points_xy(rader_points, sensors)
-    get_ESM_points_xy(ESM_points, sensors)
+    get_rader_points_xy(rader_points, sensors, output_dir)
+    get_ESM_points_xy(ESM_points, sensors, output_dir)
 
 
-def get_rader_points_xy(rader_points, sensors):
+def get_rader_points_xy(rader_points, sensors, output_dir=OUTPUT_DIR):
     points = []
 
     for index, row in tqdm(rader_points.iterrows(), total=len(rader_points), desc='转换雷达点'):
@@ -62,7 +67,8 @@ def get_rader_points_xy(rader_points, sensors):
         points.append([row['Time'], point_xy[0], point_xy[1]])
 
     radar_points = pd.DataFrame(points, columns=['Time', 'X', 'Y'])
-    radar_points.to_csv('radar_points.csv', index=False)
+    output_file = output_dir / 'radar_points.csv'
+    radar_points.to_csv(output_file, index=False)
     return radar_points
 
 
@@ -70,7 +76,7 @@ def check_distance(point1, point2,  distance=200000):
     return np.sqrt((point1[0] - point2[0]) ** 2 + (point1[1] - point2[1]) ** 2) < distance
 
 
-def get_ESM_points_xy(ESM_points, sensors):
+def get_ESM_points_xy(ESM_points, sensors, output_dir=OUTPUT_DIR):
     located_ESM_points = []
     unlocated_ESM_points = []
 
@@ -91,10 +97,12 @@ def get_ESM_points_xy(ESM_points, sensors):
                 unlocated_ESM_points.append(data)
 
     unlocated_ESM_points = pd.concat(unlocated_ESM_points, ignore_index=True)
-    unlocated_ESM_points.to_csv('unlocated_ESM_points.csv', index=False)
+    output_file = output_dir / 'unlocated_ESM_points.csv'
+    unlocated_ESM_points.to_csv(output_file, index=False)
 
     located_ESM_points= pd.DataFrame(located_ESM_points, columns=['Time', 'BoatID', 'X', 'Y'])
-    located_ESM_points.to_csv('located_ESM_points.csv', index=False)
+    output_file = output_dir / 'located_ESM_points.csv'
+    located_ESM_points.to_csv(output_file, index=False)
 
 
 def dedumplacate(radar_points_file, located_ESM_points_file, deduplacate_radar_file, safe_distance=200):
@@ -184,6 +192,7 @@ def angle_between_rays_numpy(x0, y0, x1, y1, x2, y2, degrees=True):
 
     return np.degrees(angle_rad) if degrees else angle_rad
 
+
 def merge_unlocated_ESM_with_rader(unlocated_ESM_file, radar_file, located_ESM_file, sensor_coords_file, radar_file_updated, located_ESM_updated):
     """
     对未定位的ESM点与rader点匹配（可能会出现误匹配的情况 即rader点符合角度要求，但是在更近处有另外的船）
@@ -263,18 +272,27 @@ def merge_unlocated_ESM_with_rader(unlocated_ESM_file, radar_file, located_ESM_f
 
 if __name__ == '__main__':
     sensor_coords_file = '20_ans/sensors.txt'
-    rader_file = 'radar_detection.csv'  # 复赛数据在项目根目录
+    rader_file = 'validation_set/radar_detection.csv'  # 复赛数据在项目根目录
+    
+    # 确保输出目录存在
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     
     sensors = load_sensor_coords(sensor_coords_file)
     
     # 步骤1: 提取点坐标
-    get_points(rader_file, sensors)
+    get_points(rader_file, sensors, output_dir=OUTPUT_DIR)
     
     # 步骤2: 去重
-    dedumplacate('radar_points.csv', 'located_ESM_points.csv', 'deduplacate_radar_points.csv')
+    radar_points_file = OUTPUT_DIR / 'radar_points.csv'
+    located_ESM_file = OUTPUT_DIR / 'located_ESM_points.csv'
+    deduplacate_radar_file = OUTPUT_DIR / 'deduplacate_radar_points.csv'
+    dedumplacate(str(radar_points_file), str(located_ESM_file), str(deduplacate_radar_file))
     
     # 步骤3: 合并未定位ESM
-    merge_unlocated_ESM_with_rader('unlocated_ESM_points.csv', 'deduplacate_radar_points.csv', 'located_ESM_points.csv',
-                                   '20_ans/sensors.txt', 'deduplacate_radar_points_updated.csv', 'located_ESM_points_updated.csv')
+    unlocated_ESM_file = OUTPUT_DIR / 'unlocated_ESM_points.csv'
+    radar_file_updated = OUTPUT_DIR / 'deduplacate_radar_points_updated.csv'
+    located_ESM_updated = OUTPUT_DIR / 'located_ESM_points_updated.csv'
+    merge_unlocated_ESM_with_rader(str(unlocated_ESM_file), str(deduplacate_radar_file), str(located_ESM_file),
+                                   sensor_coords_file, str(radar_file_updated), str(located_ESM_updated))
     
-    print("\n✓ 预处理完成")
+    print(f"\n✓ 预处理完成，所有文件已保存到: {OUTPUT_DIR}")

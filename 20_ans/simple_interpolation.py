@@ -2,9 +2,18 @@ import pandas as pd
 import numpy as np
 from scipy.interpolate import splprep, splev, interp1d, UnivariateSpline
 from matplotlib import pyplot as plt
+from pathlib import Path
+import sys
+
+# 添加路径以便导入模块
+sys.path.insert(0, str(Path(__file__).parent))
 from CoordinateConvert import xy_to_lonlat
 from preprocess import angle_between_rays_numpy
 from tqdm import tqdm
+
+# 输出文件夹
+OUTPUT_DIR = Path('20_ans/processed_data')
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 startx = 0 #200000
 starty = 0 #3800000
@@ -198,7 +207,7 @@ def point2result(x, y, z, BoatID):
     return track
 
 
-def align_rader2ESM(located_ESM_points, radar_points):
+def align_rader2ESM(located_ESM_points, radar_points, output_dir=OUTPUT_DIR):
     radar_points = pd.read_csv(radar_points)
 
     points = []
@@ -253,15 +262,19 @@ def align_rader2ESM(located_ESM_points, radar_points):
     outdf = pd.DataFrame(tracks, columns=['ID', 'Time', 'LON', 'LAT'])
     df_sorted = outdf.sort_values(['ID', 'Time'])
     df_sorted['Time'] = pd.to_datetime(df_sorted['Time']).dt.strftime('%Y-%m-%d %H:%M:%S')
-    df_sorted.to_csv('results.csv', index=False, float_format='%.6f')
+    
+    output_file = output_dir / 'results.csv'
+    df_sorted.to_csv(output_file, index=False, float_format='%.6f')
     
     print(f"\n✓ 轨迹生成完成 - 共{len(df_sorted)}个点，{df_sorted['ID'].nunique()}艘船")
+    print(f"结果已保存到: {output_file}")
 
 
 
 if __name__ == '__main__':
-    align_rader2ESM('located_ESM_points_updated.csv', 'deduplacate_radar_points_updated.csv')
+    # 使用 processed_data 文件夹中的文件
+    located_ESM_file = OUTPUT_DIR / 'located_ESM_points_updated.csv'
+    radar_file = OUTPUT_DIR / 'deduplacate_radar_points_updated.csv'
+    
+    align_rader2ESM(str(located_ESM_file), str(radar_file))
 
-#df = pd.read_csv('results.csv')
-#df['Time'] = pd.to_datetime(df['Time']).dt.strftime('%Y-%m-%d %H:%M:%S')
-#df.to_csv('results111.csv', index=False, float_format='%.6f')

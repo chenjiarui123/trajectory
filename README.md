@@ -9,7 +9,7 @@ trajectory/
 ├── 20_ans/                # 参考方案代码
 ├── official/              # 官方数据和工具（包含复赛）
 ├── our_ans/               # 实验代码
-├── common/                # 公共模块（待创建）
+├── common/                # 公共模块
 └── methods/               # 各方案实现
 ```
 

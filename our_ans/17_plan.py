@@ -17,6 +17,13 @@ import pandas as pd
 import numpy as np
 from scipy.interpolate import interp1d
 from datetime import datetime, timedelta
+import sys
+from pathlib import Path
+
+# 添加项目根目录到路径，以便导入 official 模块
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
+
 from official.CoordinateConvert import lonlat_to_xy, xy_to_lonlat, space_intersection, adjust_angle
 from official.sensor_config import SENSOR_INFO, ESM_SENSORS
 
@@ -24,7 +31,7 @@ print("17.py删除踩石头版本（对照实验）")
 
 # ===== 主程序 =====
 print("\n正在读取数据...")
-radar_df = pd.read_csv('official/test/radar_detection.csv')
+radar_df = pd.read_csv('validation_set/radar_detection.csv')
 radar_df['Time'] = pd.to_datetime(radar_df['Time'])
 
 # 分离ESM数据
