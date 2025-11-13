@@ -250,6 +250,319 @@ def merge_unlocated_ESM_custom(
     radar.to_csv(radar_file_updated, index=False)
 
 
+def calculate_point_confidence(point, group_data, point_dict,
+                              update_distance, update_speed, update_angle):
+    """
+    计算雷达点属于某条轨迹的置信度分数
+
+    Args:
+        point: 雷达点 [time, x, y]
+        group_data: 船只的ESM点数据
+        point_dict: 插值点字典 {time: (x, y)}
+        update_distance: 距离阈值
+        update_speed: 速度阈值
+        update_angle: 角度阈值
+
+    Returns:
+        score: 置信度分数 (0-1)，0表示不匹配
+    """
+    from preprocess import angle_between_rays_numpy
+
+    id = int(point[0])
+
+    if id not in point_dict:
+        return 0.0
+
+    # 1. 距离检查和分数
+    distance = np.sqrt((point_dict[id][0] - point[1])**2 +
+                      (point_dict[id][1] - point[2])**2)
+
+    if distance >= update_distance:
+        return 0.0
+
+    distance_score = 1.0 - (distance / update_distance)
+
+    # 2. 找前后最近的ESM点
+    earlier = group_data[group_data['Time'] <= id]
+    closest_earlier = earlier.iloc[(id - earlier['Time']).abs().argsort()[:1]]
+    later = group_data[group_data['Time'] >= id]
+    closest_later = later.iloc[(later['Time'] - id).abs().argsort()[:1]]
+
+    if earlier.shape[0] == 0 or later.shape[0] == 0:
+        return 0.0
+
+    if closest_earlier['Time'].values[0] == id or closest_later['Time'].values[0] == id:
+        return 0.0
+
+    # 3. 速度检查和一致性分数
+    speed_earlier = (np.sqrt((closest_earlier['X'].values[0] - point[1])**2 +
+                            (closest_earlier['Y'].values[0] - point[2])**2) /
+                    (id - closest_earlier['Time'].values[0]))
+
+    speed_later = (np.sqrt((closest_later['X'].values[0] - point[1])**2 +
+                          (closest_later['Y'].values[0] - point[2])**2) /
+                  (closest_later['Time'].values[0] - id))
+
+    if speed_earlier > update_speed or speed_later > update_speed:
+        return 0.0
+
+    # 速度一致性：两个速度越接近越好
+    avg_speed = (speed_earlier + speed_later) / 2
+    if avg_speed > 0:
+        speed_diff = abs(speed_earlier - speed_later)
+        speed_consistency = 1.0 - min(speed_diff / avg_speed, 1.0)
+    else:
+        speed_consistency = 0.5
+
+    # 4. 角度检查和分数
+    angle = angle_between_rays_numpy(
+        point[1], point[2],
+        closest_earlier['X'].values[0], closest_earlier['Y'].values[0],
+        closest_later['X'].values[0], closest_later['Y'].values[0],
+        degrees=True
+    )
+
+    if angle < update_angle:
+        return 0.0
+
+    # 角度越接近180°越好（说明在直线上）
+    angle_score = (angle - update_angle) / (180 - update_angle)
+
+    # 5. 综合分数（加权平均）
+    final_score = (
+        0.4 * distance_score +      # 距离最重要
+        0.3 * speed_consistency +    # 速度一致性次之
+        0.3 * angle_score            # 角度也重要
+    )
+
+    return final_score
+
+
+def update_unlocated_custom(group_data, point_dict, points, BoatID,
+                           update_distance=600, update_speed=800, update_angle=90):
+    """
+    参数化的 update_unlocated 函数
+
+    Args:
+        group_data: 当前船只的ESM点数据
+        point_dict: 插值点字典 {time: (x, y)}
+        points: 候选雷达点列表
+        BoatID: 船只ID
+        update_distance: 雷达点与插值点的最大距离(米)
+        update_speed: 与前后ESM点的最大速度(米/分钟)
+        update_angle: 前后ESM点夹角的最小值(度)
+
+    Returns:
+        group_data: 更新后的数据
+        points: 剩余的候选点
+    """
+    from preprocess import angle_between_rays_numpy
+
+    located = []
+    for point in points:
+        id = int(point[0])
+        if id in point_dict:
+            distance = np.sqrt((point_dict[id][0] - point[1]) ** 2 + (point_dict[id][1] - point[2]) ** 2)
+            if distance < update_distance:
+                earlier = group_data[group_data['Time'] <= id]
+                closest_earlier = earlier.iloc[(id - earlier['Time']).abs().argsort()[:1]]
+                later = group_data[group_data['Time'] >= id]
+                closest_later = later.iloc[(later['Time'] - id).abs().argsort()[:1]]
+
+                if earlier.shape[0] == 0 or later.shape[0] == 0:
+                    continue
+
+                if closest_earlier['Time'].values[0] == id or closest_later['Time'].values[0] == id:
+                   continue
+
+                speed_earlier = (np.sqrt((closest_earlier['X'].values[0] - point[1]) ** 2 + (closest_earlier['Y'].values[0] - point[2]) ** 2)
+                                 / (id - closest_earlier['Time'].values[0]))
+                speed_later = (np.sqrt((closest_later['X'].values[0] - point[1]) ** 2 + (closest_later['Y'].values[0] - point[2]) ** 2)
+                               / (closest_later['Time'].values[0] - id))
+
+                if speed_earlier > update_speed or speed_later > update_speed:
+                    continue
+
+                if angle_between_rays_numpy(point[1], point[2], closest_earlier['X'].values[0], closest_earlier['Y'].values[0],
+                                            closest_later['X'].values[0], closest_later['Y'].values[0], degrees=True) < update_angle:
+                    continue
+
+                n = group_data.shape[0]
+                group_data.loc[n] = [int(point[0]), BoatID, point[1], point[2]]
+                located.append(point)
+
+    points = [point for point in points if point not in located]
+    return group_data, points
+
+
+def update_unlocated_with_confidence(group_data, point_dict, points, BoatID,
+                                     update_distance=600, update_speed=800, update_angle=90,
+                                     confidence_threshold=0.3, top_k=None):
+    """
+    基于置信度的雷达点匹配（改进版）
+
+    Args:
+        group_data: 当前船只的ESM点数据
+        point_dict: 插值点字典 {time: (x, y)}
+        points: 候选雷达点列表
+        BoatID: 船只ID
+        update_distance: 雷达点与插值点的最大距离(米)
+        update_speed: 与前后ESM点的最大速度(米/分钟)
+        update_angle: 前后ESM点夹角的最小值(度)
+        confidence_threshold: 置信度阈值，低于此值的点不考虑
+        top_k: 最多选择前k个高分点，None表示不限制
+
+    Returns:
+        group_data: 更新后的数据
+        points: 剩余的候选点
+    """
+    # 计算所有候选点的置信度
+    candidates = []
+
+    for point in points:
+        score = calculate_point_confidence(
+            point, group_data, point_dict,
+            update_distance, update_speed, update_angle
+        )
+
+        if score > confidence_threshold:
+            candidates.append((point, score))
+
+    # 按置信度排序（从高到低）
+    candidates.sort(key=lambda x: x[1], reverse=True)
+
+    # 选择前top_k个点
+    if top_k is not None:
+        candidates = candidates[:top_k]
+
+    # 添加选中的点
+    located = []
+    for point, score in candidates:
+        n = group_data.shape[0]
+        group_data.loc[n] = [int(point[0]), BoatID, point[1], point[2]]
+        located.append(point)
+
+    # 从候选池中移除已分配的点
+    points = [point for point in points if point not in located]
+
+    return group_data, points
+
+
+def ransac_fit_custom(group_data, points, BoatID, ransac_distance=500, ransac_min_points=5):
+    """
+    参数化的 RANSAC 拟合函数
+
+    Args:
+        group_data: 当前船只的ESM点数据
+        points: 候选雷达点列表
+        BoatID: 船只ID
+        ransac_distance: RANSAC距离阈值(米)
+        ransac_min_points: RANSAC最小点数要求
+
+    Returns:
+        group_data: 更新后的数据
+        points: 剩余的候选点
+    """
+    startx = 0
+    starty = 0
+
+    x = group_data['Time'].values[0]
+    y = group_data['X'].values[0] - startx
+    z = group_data['Y'].values[0] - starty
+
+    max_point_num = 0
+    max_points = None
+
+    points_array = np.array(points)
+    line_point = np.array((x, y, z))
+
+    for point in points:
+        line_direction = np.array((point[0]-x, point[1]-y, point[2]-z))
+
+        # 单位化方向向量
+        line_direction = line_direction / np.linalg.norm(line_direction)
+
+        # 处理直线垂直于x轴的情况
+        if abs(line_direction[0]) < 1e-10:
+            continue
+
+        # 计算参数t向量
+        t_values = (points_array[:, 0] - line_point[0]) / line_direction[0]
+
+        # 计算投影点
+        x0, y0, z0 = line_point
+        dx, dy, dz = line_direction
+
+        n = len(t_values)
+        projections = np.empty((n, 3))
+        projections[:, 0] = x0 + t_values * dx
+        projections[:, 1] = y0 + t_values * dy
+        projections[:, 2] = z0 + t_values * dz
+
+        # 计算距离（yz平面距离）
+        yz_distances = np.sqrt(
+          (points_array[:, 1] - projections[:, 1]) ** 2 +
+          (points_array[:, 2] - projections[:, 2]) ** 2
+        )
+
+        mask = yz_distances < ransac_distance
+        if mask.sum() > max_point_num:
+            max_point_num = mask.sum()
+            max_points = points_array[mask]
+
+    if max_point_num >= ransac_min_points:
+        for point in max_points:
+            if int(point[0]) == x:
+                continue
+            n = group_data.shape[0]
+            group_data.loc[n] = [int(point[0]), BoatID, point[1], point[2]]
+            point_list = point.tolist()
+            if point_list in points:
+                points.remove(point_list)
+
+    group_data = group_data.sort_values(by='Time', ascending=True)
+    return group_data, points
+
+
+def smooth_velocity(interp_pointx, interp_pointy, interp_pointz, sigma=2.0, max_speed=1000):
+    """
+    对轨迹进行速度平滑 (V4优化3)
+
+    Args:
+        interp_pointx: 时间序列
+        interp_pointy: X坐标序列
+        interp_pointz: Y坐标序列
+        sigma: 高斯滤波的sigma参数
+        max_speed: 最大速度阈值 (米/分钟)
+
+    Returns:
+        平滑后的轨迹
+    """
+    from scipy.ndimage import gaussian_filter1d
+
+    # 计算速度
+    if len(interp_pointx) < 3:
+        return interp_pointx, interp_pointy, interp_pointz
+
+    vx = np.diff(interp_pointy) / np.diff(interp_pointx)
+    vy = np.diff(interp_pointz) / np.diff(interp_pointx)
+    speed = np.sqrt(vx**2 + vy**2)
+
+    # 检测异常速度
+    outliers = speed > max_speed
+
+    if np.any(outliers):
+        # 使用高斯滤波平滑
+        interp_pointy_smooth = gaussian_filter1d(interp_pointy, sigma=sigma)
+        interp_pointz_smooth = gaussian_filter1d(interp_pointz, sigma=sigma)
+        return interp_pointx, interp_pointy_smooth, interp_pointz_smooth
+    else:
+        # 没有异常速度，也进行轻微平滑
+        interp_pointy_smooth = gaussian_filter1d(interp_pointy, sigma=sigma*0.5)
+        interp_pointz_smooth = gaussian_filter1d(interp_pointz, sigma=sigma*0.5)
+        return interp_pointx, interp_pointy_smooth, interp_pointz_smooth
+
+
 def interpolation_with_params(
     located_ESM_file,
     radar_file,
@@ -260,27 +573,54 @@ def interpolation_with_params(
     ransac_distance=500,
     ransac_min_points=5,
     iteration_rounds=3,
-    enable_ransac=True
+    enable_ransac=True,
+    interpolation_method='spline',
+    # V4新增参数
+    enable_ransac_for_all=False,
+    enable_adaptive_iteration=False,
+    enable_velocity_smoothing=False,
+    max_iterations=10,
+    velocity_smooth_sigma=2.0,
+    # 置信度匹配参数
+    enable_confidence_matching=False,
+    confidence_threshold=0.3,
+    confidence_top_k=None
 ):
     """
-    参数化的插值流程 - 简化版本
+    完全参数化的插值流程
 
     Args:
         located_ESM_file: 定位的ESM点文件
         radar_file: 雷达点文件
         output_dir: 输出目录
-        update_distance: 更新点距离阈值(米) [暂未实现]
-        update_speed: 更新点速度阈值(米/分钟) [暂未实现]
-        update_angle: 更新点角度阈值(度) [暂未实现]
-        ransac_distance: RANSAC距离阈值(米) [暂未实现]
-        ransac_min_points: RANSAC最小点数 [暂未实现]
-        iteration_rounds: 迭代轮数 [已实现]
-        enable_ransac: 是否启用RANSAC [已实现]
-
-    注意: 由于原函数中很多参数是硬编码的，目前只实现了 iteration_rounds 和 enable_ransac 的参数化
-          其他参数需要完全重写 update_unlocated 和 ransac_fit 函数才能实现
+        update_distance: 更新点距离阈值(米) [已实现✓]
+        update_speed: 更新点速度阈值(米/分钟) [已实现✓]
+        update_angle: 更新点角度阈值(度) [已实现✓]
+        ransac_distance: RANSAC距离阈值(米) [已实现✓]
+        ransac_min_points: RANSAC最小点数 [已实现✓]
+        iteration_rounds: 迭代轮数 [已实现✓]
+        enable_ransac: 是否启用RANSAC [已实现✓]
+        interpolation_method: 插值方法 ('spline', 'akima', 'pchip') [新增✓]
+        enable_ransac_for_all: 对所有轨迹启用RANSAC扩展 [V4优化1]
+        enable_adaptive_iteration: 自适应迭代直到收敛 [V4优化2]
+        enable_velocity_smoothing: 速度平滑后处理 [V4优化3]
+        max_iterations: 自适应迭代的最大轮数
+        velocity_smooth_sigma: 高斯滤波的sigma参数
+        enable_confidence_matching: 启用置信度匹配 [置信度优化]
+        confidence_threshold: 置信度阈值 (0-1)
+        confidence_top_k: 每次迭代最多选择前k个高分点
     """
-    from simple_interpolation import fit_curve_seperate, fit_curve, update_unlocated, ransac_fit, point2result
+    from simple_interpolation import fit_curve_seperate, fit_curve, point2result
+
+    # 根据方法选择插值函数
+    if interpolation_method == 'akima':
+        from common.akima_interpolation import fit_curve_akima
+        fit_func = fit_curve_akima
+    elif interpolation_method == 'pchip':
+        from common.pchip_interpolation import fit_curve_pchip
+        fit_func = fit_curve_pchip
+    else:
+        fit_func = fit_curve_seperate
 
     output_dir = Path(output_dir)
     startx = 0
@@ -302,26 +642,108 @@ def interpolation_with_params(
         group_data['BoatID'] = group_data['BoatID'].astype('Int64')
 
         if group_data.shape[0] > 1:
-            # 使用参数化的迭代次数
-            for j in range(iteration_rounds):
+            # ⭐ V4优化2: 自适应迭代
+            if enable_adaptive_iteration:
+                # 自适应迭代直到收敛
+                for j in range(max_iterations):
+                    old_count = len(group_data)
+
+                    try:
+                        interp_pointx, interp_pointy, interp_pointz = fit_func(group_data)
+                    except:
+                        break
+
+                    point_dict = {}
+                    for index, point in enumerate(zip(interp_pointx, interp_pointy, interp_pointz)):
+                        id = int(point[0]+0.1)
+                        point_dict[id] = point[1:]
+
+                    # 选择匹配方法
+                    if enable_confidence_matching:
+                        group_data, points = update_unlocated_with_confidence(
+                            group_data, point_dict, points, BoatID,
+                            update_distance=update_distance,
+                            update_speed=update_speed,
+                            update_angle=update_angle,
+                            confidence_threshold=confidence_threshold,
+                            top_k=confidence_top_k
+                        )
+                    else:
+                        group_data, points = update_unlocated_custom(
+                            group_data, point_dict, points, BoatID,
+                            update_distance=update_distance,
+                            update_speed=update_speed,
+                            update_angle=update_angle
+                        )
+                    group_data = group_data.sort_values(by='Time', ascending=True)
+
+                    new_count = len(group_data)
+
+                    # 收敛判断
+                    if new_count == old_count:
+                        break
+
+                # 最后一次插值
                 try:
-                    interp_pointx, interp_pointy, interp_pointz = fit_curve_seperate(group_data)
+                    interp_pointx, interp_pointy, interp_pointz = fit_func(group_data)
                 except:
-                    break
+                    continue
+            else:
+                # 原有的固定迭代次数
+                for j in range(iteration_rounds):
+                    try:
+                        interp_pointx, interp_pointy, interp_pointz = fit_func(group_data)
+                    except:
+                        break
 
-                point_dict = {}
-                for index, point in enumerate(zip(interp_pointx, interp_pointy, interp_pointz)):
-                    id = int(point[0]+0.1)
-                    point_dict[id] = point[1:]
+                    point_dict = {}
+                    for index, point in enumerate(zip(interp_pointx, interp_pointy, interp_pointz)):
+                        id = int(point[0]+0.1)
+                        point_dict[id] = point[1:]
 
-                group_data, points = update_unlocated(group_data, point_dict, points, BoatID)
-                group_data = group_data.sort_values(by='Time', ascending=True)
-                interp_pointx, interp_pointy, interp_pointz = fit_curve_seperate(group_data)
+                    # 选择匹配方法
+                    if enable_confidence_matching:
+                        group_data, points = update_unlocated_with_confidence(
+                            group_data, point_dict, points, BoatID,
+                            update_distance=update_distance,
+                            update_speed=update_speed,
+                            update_angle=update_angle,
+                            confidence_threshold=confidence_threshold,
+                            top_k=confidence_top_k
+                        )
+                    else:
+                        group_data, points = update_unlocated_custom(
+                            group_data, point_dict, points, BoatID,
+                            update_distance=update_distance,
+                            update_speed=update_speed,
+                            update_angle=update_angle
+                        )
+                    group_data = group_data.sort_values(by='Time', ascending=True)
+                    interp_pointx, interp_pointy, interp_pointz = fit_func(group_data)
+
+            # ⭐ V4优化1: 对所有轨迹启用RANSAC扩展
+            if enable_ransac_for_all:
+                original_count = len(group_data)
+                group_data, points = ransac_fit_custom(
+                    group_data, points, BoatID,
+                    ransac_distance=ransac_distance,
+                    ransac_min_points=ransac_min_points
+                )
+                # 如果RANSAC找到新点，再插值一次
+                if len(group_data) > original_count:
+                    try:
+                        interp_pointx, interp_pointy, interp_pointz = fit_func(group_data)
+                    except:
+                        pass
 
         elif group_data.shape[0] == 1:
-            # 使用参数化的 enable_ransac
+            # 使用参数化的 RANSAC
             if enable_ransac:
-                group_data, points = ransac_fit(group_data, points, BoatID)
+                group_data, points = ransac_fit_custom(
+                    group_data, points, BoatID,
+                    ransac_distance=ransac_distance,
+                    ransac_min_points=ransac_min_points
+                )
                 if group_data.shape[0] == 1:
                     continue
                 else:
@@ -331,6 +753,13 @@ def interpolation_with_params(
                 continue
         else:
             continue
+
+        # ⭐ V4优化3: 速度平滑
+        if enable_velocity_smoothing:
+            interp_pointx, interp_pointy, interp_pointz = smooth_velocity(
+                interp_pointx, interp_pointy, interp_pointz,
+                sigma=velocity_smooth_sigma
+            )
 
         track = point2result(interp_pointx, interp_pointy, interp_pointz, BoatID)
         tracks.extend(track)

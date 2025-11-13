@@ -82,44 +82,84 @@ def main():
     print(f"  最大: {stats_df['crossing_points'].max()}")
     print(f"  最小: {stats_df['crossing_points'].min()}")
     
-    # 4. 分层抽样100艘
-    print("\n步骤4: 分层抽样100艘船...")
-    
-    # 按质量分层的目标比例（基于训练集分布）
+    # 4. 分层抽样100艘 - 参考复赛分布
+    print("\n步骤4: 分层抽样100艘船（参考复赛分布）...")
+
+    # 复赛分布目标比例
+    # low: 0%, medium: 8.6%, high: 91.4%
     total_sample = 100
-    
+    target_distribution = {
+        'low': 0.0,      # 0艘
+        'medium': 0.086, # 约9艘
+        'high': 0.914    # 约91艘
+    }
+
+    print(f"\n目标分布（参考复赛）:")
+    print(f"  low    (交叉点 <2):  {int(total_sample * target_distribution['low']):3d} 艘 ({target_distribution['low']*100:5.1f}%)")
+    print(f"  medium (交叉点 2-4): {int(total_sample * target_distribution['medium']):3d} 艘 ({target_distribution['medium']*100:5.1f}%)")
+    print(f"  high   (交叉点 >=5): {int(total_sample * target_distribution['high']):3d} 艘 ({target_distribution['high']*100:5.1f}%)")
+
     sampled_boats = []
-    
+
     for quality in ['low', 'medium', 'high']:
         quality_df = stats_df[stats_df['quality'] == quality]
-        quality_pct = len(quality_df) / len(stats_df)
-        
-        # 计算该层应抽样数量
-        n_sample = max(1, int(total_sample * quality_pct))
-        
+
+        # 使用复赛目标比例
+        n_sample = int(total_sample * target_distribution[quality])
+
         # 随机抽样
-        if len(quality_df) > 0:
+        if n_sample > 0 and len(quality_df) > 0:
             sample = quality_df.sample(n=min(n_sample, len(quality_df)), random_state=42)
             sampled_boats.append(sample)
-            print(f"  {quality:8s}: 抽样 {len(sample):2d} 艘")
-    
-    sampled_df = pd.concat(sampled_boats)
-    
-    # 如果不足100艘，从medium中补充
+            print(f"  {quality:8s}: 抽样 {len(sample):2d} 艘 (目标 {n_sample:2d} 艘)")
+        elif n_sample == 0:
+            print(f"  {quality:8s}: 抽样  0 艘 (目标  0 艘) - 跳过")
+        else:
+            print(f"  {quality:8s}: 可用 {len(quality_df):2d} 艘，不足目标 {n_sample:2d} 艘")
+
+    sampled_df = pd.concat(sampled_boats) if sampled_boats else pd.DataFrame()
+
+    # 如果不足100艘，优先从high补充，其次medium
     if len(sampled_df) < total_sample:
         remaining = total_sample - len(sampled_df)
-        medium_df = stats_df[
-            (stats_df['quality'] == 'medium') & 
+        print(f"\n  当前抽样 {len(sampled_df)} 艘，还需补充 {remaining} 艘")
+
+        # 优先从high补充
+        high_df = stats_df[
+            (stats_df['quality'] == 'high') &
             (~stats_df['boat_id'].isin(sampled_df['boat_id']))
         ]
-        if len(medium_df) > 0:
-            extra = medium_df.sample(n=min(remaining, len(medium_df)), random_state=43)
-            sampled_df = pd.concat([sampled_df, extra])
-            print(f"  补充: {len(extra)} 艘")
+        if len(high_df) > 0:
+            extra_high = high_df.sample(n=min(remaining, len(high_df)), random_state=43)
+            sampled_df = pd.concat([sampled_df, extra_high])
+            remaining -= len(extra_high)
+            print(f"  从 high 补充: {len(extra_high)} 艘")
+
+        # 如果还不够，从medium补充
+        if remaining > 0:
+            medium_df = stats_df[
+                (stats_df['quality'] == 'medium') &
+                (~stats_df['boat_id'].isin(sampled_df['boat_id']))
+            ]
+            if len(medium_df) > 0:
+                extra_medium = medium_df.sample(n=min(remaining, len(medium_df)), random_state=44)
+                sampled_df = pd.concat([sampled_df, extra_medium])
+                print(f"  从 medium 补充: {len(extra_medium)} 艘")
     
     sampled_boat_ids = sampled_df['boat_id'].tolist()
-    
+
     print(f"\n最终抽样: {len(sampled_boat_ids)} 艘船")
+
+    # 验证最终分布
+    print(f"\n最终分布验证:")
+    for quality in ['low', 'medium', 'high']:
+        count = len(sampled_df[sampled_df['quality'] == quality])
+        pct = count / len(sampled_df) * 100 if len(sampled_df) > 0 else 0
+        target_pct = target_distribution[quality] * 100
+        diff = pct - target_pct
+        status = "✓" if abs(diff) < 5 else "⚠"
+        print(f"  {quality:8s}: {count:3d} 艘 ({pct:5.1f}%) - 目标 {target_pct:5.1f}% {status}")
+
     print(f"\n抽样后交叉点统计:")
     print(f"  平均: {sampled_df['crossing_points'].mean():.2f}")
     print(f"  中位数: {sampled_df['crossing_points'].median():.0f}")
