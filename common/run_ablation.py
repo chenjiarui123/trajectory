@@ -16,7 +16,7 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from common.评测脚本 import evaluate
-from our_ans.ablation_wrapper import preprocess_with_params, interpolation_with_params
+from common.ablation_wrapper import preprocess_with_params, interpolation_with_params
 
 # 禁用所有子进程的tqdm输出
 os.environ['TQDM_DISABLE'] = '1'
