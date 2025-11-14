@@ -339,7 +339,8 @@ def calculate_point_confidence(point, group_data, point_dict,
 
 
 def update_unlocated_custom(group_data, point_dict, points, BoatID,
-                           update_distance=600, update_speed=800, update_angle=90):
+                           update_distance=600, update_speed=800, update_angle=90,
+                           enable_kinematic_constraints=False):
     """
     参数化的 update_unlocated 函数
 
@@ -584,7 +585,10 @@ def interpolation_with_params(
     # 置信度匹配参数
     enable_confidence_matching=False,
     confidence_threshold=0.3,
-    confidence_top_k=None
+    confidence_top_k=None,
+    # v3.2/v3.3 新增参数
+    enable_kinematic_constraints=False,
+    enable_outlier_detection=False
 ):
     """
     完全参数化的插值流程
@@ -673,7 +677,8 @@ def interpolation_with_params(
                             group_data, point_dict, points, BoatID,
                             update_distance=update_distance,
                             update_speed=update_speed,
-                            update_angle=update_angle
+                            update_angle=update_angle,
+                            enable_kinematic_constraints=enable_kinematic_constraints
                         )
                     group_data = group_data.sort_values(by='Time', ascending=True)
 
@@ -716,7 +721,8 @@ def interpolation_with_params(
                             group_data, point_dict, points, BoatID,
                             update_distance=update_distance,
                             update_speed=update_speed,
-                            update_angle=update_angle
+                            update_angle=update_angle,
+                            enable_kinematic_constraints=enable_kinematic_constraints
                         )
                     group_data = group_data.sort_values(by='Time', ascending=True)
                     interp_pointx, interp_pointy, interp_pointz = fit_func(group_data)
