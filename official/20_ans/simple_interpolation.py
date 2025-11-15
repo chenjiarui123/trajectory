@@ -11,9 +11,8 @@ from CoordinateConvert import xy_to_lonlat
 from preprocess import angle_between_rays_numpy
 from tqdm import tqdm
 
-# 输出文件夹
+# 输出文件夹（默认值，但不在模块级别创建，避免污染项目根目录）
 OUTPUT_DIR = Path('20_ans/processed_data')
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 startx = 0 #200000
 starty = 0 #3800000

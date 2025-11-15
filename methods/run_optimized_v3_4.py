@@ -70,9 +70,9 @@ def main():
     
     # 设置路径
     radar_file = project_root / 'official' / 'radar_detection.csv'
-    sensor_coords_file = project_root / 'our_ans' / '20_ans' / 'sensors.txt'
+    sensor_coords_file = project_root / 'official' / '20_ans' / 'sensors.txt'
     output_dir = project_root / 'our_ans' / 'optimized_v3_4_results'
-    output_dir.mkdir(exist_ok=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
     
     print(f"\n输入文件: {radar_file}")
     print(f"输出目录: {output_dir}")

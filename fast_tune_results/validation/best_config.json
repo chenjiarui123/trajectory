@@ -1,0 +1,23 @@
+{
+  "score": 42.76913332696172,
+  "config": {
+    "safe_distance": 200,
+    "esm_angle_threshold": 0.065,
+    "esm_speed_threshold": 1000,
+    "esm_check_distance": 200000,
+    "enable_deduplication": false,
+    "enable_esm_merge": true,
+    "update_distance": 2000,
+    "update_speed": 1000,
+    "update_angle": 60,
+    "ransac_distance": 500,
+    "ransac_min_points": 5,
+    "iteration_rounds": 5,
+    "enable_ransac": true,
+    "interpolation_method": "akima",
+    "enable_kinematic_constraints": true,
+    "enable_outlier_detection": true
+  },
+  "timestamp": "20251115_172615",
+  "description": "baseline"
+}

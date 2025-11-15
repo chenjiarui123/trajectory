@@ -13,7 +13,8 @@ import sys
 
 # 添加路径
 project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root / 'our_ans' / '20_ans'))
+# 优先使用 official/20_ans，避免在项目根目录创建 20_ans
+sys.path.insert(0, str(project_root / 'official' / '20_ans'))
 
 from CoordinateConvert import lonlat_to_xy, xy_to_lonlat, space_intersection, adjust_angle, radar_conversion
 from preprocess import (

@@ -6,9 +6,8 @@ import numpy as np
 from shapely.geometry import Point, MultiPoint, LineString
 from tqdm import tqdm
 
-# 输出文件夹
+# 输出文件夹（默认值，但不在模块级别创建，避免污染项目根目录）
 OUTPUT_DIR = Path('20_ans/processed_data')
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 def load_sensor_coords(sensor_coords_file):
     '''
